@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Collaborative Task List</title>
+</head>
+<body>
+    <h1>Collaborative Task List</h1>
+    <div>
+        <input type="text" id="taskInput" placeholder="Enter a task..." />
+        <button onclick="addTask()">Add Task</button>
+    </div>
+    <ul id="taskList"></ul>
+
+    <!-- JavaScript to use the Shared Worker -->
+    <script>
+        let sharedWorker;
+
+        // Check if the browser supports SharedWorker
+        console.log('Checking for SharedWorker support');
+        if (window.SharedWorker) {
+            try {
+                // Create a Shared Worker
+                sharedWorker = new SharedWorker("{% static 'shared_worker.js' %}");
+                console.log('Shared Worker created successfully');
+
+                // Start the shared worker's port
+                sharedWorker.port.start();
+
+                // Load tasks from local storage when the window loads
+                window.onload = function() {
+                    console.log('Window loaded, initializing tasks from localStorage');
+                    const tasks = JSON.parse(localStorage.getItem('tasks')) || [];
+                    updateTaskList(tasks); // Update the UI
+                    if (sharedWorker) {
+                        console.log('Sending init message to worker with tasks:', tasks);
+                        sharedWorker.port.postMessage({ action: 'init', tasks: tasks });
+                    }
+                };
+
+                // Display messages received from the worker
+                sharedWorker.port.onmessage = function(event) {
+                    console.log('Message received from Shared Worker:', event.data);
+                    const { action, data } = event.data;
+                    if (action === 'updateTasks') {
+                        updateTaskList(data);
+                        saveTasksToLocalStorage(data);
+                    }
+                };
+
+                // Worker error handling
+                sharedWorker.onerror = function(error) {
+                    console.error('Shared Worker Error:', error.message);
+                };
+
+            } catch (error) {
+                console.error('Failed to create Shared Worker:', error);
+            }
+        } else {
+            alert("Shared Workers are not supported in your browser.");
+        }
+
+        // Function to add a new task
+        function addTask() {
+            const taskInput = document.getElementById('taskInput');
+            if (taskInput.value.trim() !== "") {
+                const task = taskInput.value;
+                console.log('Adding new task:', task);
+                sharedWorker.port.postMessage({ action: 'addTask', task: task });
+                console.log('Sent addTask message to worker');
+                taskInput.value = '';
+            }
+        }
+
+        // Function to update the task list in the DOM
+        function updateTaskList(tasks) {
+            console.log('Updating task list in the DOM with tasks:', tasks);
+            const taskListElement = document.getElementById('taskList');
+            taskListElement.innerHTML = '';
+            tasks.forEach((task, index) => {
+                const listItem = document.createElement('li');
+                listItem.textContent = task;
+                listItem.appendChild(createDeleteButton(index));
+                taskListElement.appendChild(listItem);
+            });
+        }
+
+        // Function to create delete button for each task
+        function createDeleteButton(taskIndex) {
+            const button = document.createElement('button');
+            button.textContent = 'Delete';
+            button.onclick = function() {
+                console.log('Deleting task at index:', taskIndex);
+                sharedWorker.port.postMessage({ action: 'deleteTask', index: taskIndex });
+                console.log('Sent deleteTask message to worker');
+            };
+            return button;
+        }
+
+        // Function to save tasks to localStorage
+        function saveTasksToLocalStorage(tasks) {
+            console.log('Saving task list to localStorage:', tasks);
+            localStorage.setItem('tasks', JSON.stringify(tasks));
+        }
+    </script>
+</body>
+</html>
